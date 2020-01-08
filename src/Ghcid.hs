@@ -26,6 +26,7 @@ import System.FilePath
 import System.Process
 import System.Info
 import System.IO.Extra
+import Text.Regex.TDFA
 
 import Paths_ghcid
 import Language.Haskell.Ghcid.Escape
@@ -66,6 +67,7 @@ data Options = Options
     ,setup :: [String]
     ,allow_eval :: Bool
     ,target :: Maybe String
+    ,priority :: Maybe String
     }
     deriving (Data,Typeable,Show)
 
@@ -105,6 +107,7 @@ options = cmdArgsMode $ Options
     ,setup = [] &= name "setup" &= typ "COMMAND" &= help "Setup commands to pass to ghci on stdin, usually :set <something>"
     ,allow_eval = False &= name "allow-eval" &= help "Execute REPL commands in comments"
     ,target = Nothing &= typ "TARGET" &= help "Cabal target to build (e.g. lib:foo)"
+    ,priority = Nothing &= typ "REGEX" &= help "Prioritise errors and warnings that match the given regex"
     } &= verbosity &=
     program "ghcid" &= summary ("Auto reloading GHCi daemon v" ++ showVersion version)
 
@@ -306,6 +309,8 @@ runGhcid session waiter termSize termOutput opts@Options{..} = do
                     else x ++ pad
             termOutput $ applyPadding $ map fromEsc ((if termWrap == WrapSoft then mergeSoft else map fst) $ load ++ msg)
 
+    priorityRegex <- traverse makeRegexM priority
+
     when (ignoreLoaded && null reload) $ do
         putStrLn "--reload must be set when using --ignore-loaded"
         exitFailure
@@ -364,7 +369,12 @@ runGhcid session waiter termSize termOutput opts@Options{..} = do
                 -- sort error messages by modtime, so newer edits cause the errors to float to the top - see #153
                 errTimes <- sequence [(x,) <$> getModTime x | x <- nubOrd $ map loadFile msgError]
                 let f x = lookup (loadFile x) errTimes
-                    moduleSorted = sortOn (Down . f) msgError ++ msgWarn
+                    withPriority msg
+                      | Just regex <- priorityRegex
+                      , Message{..} <- msg
+                      = match (regex :: Regex) (unlines loadMessage) :: Int
+                      | otherwise = 0
+                    moduleSorted = sortOn (Down . withPriority) $ sortOn (Down . f) msgError ++ msgWarn
                 pure $ (if reverse_errors then reverse else id) moduleSorted
 
             outputFill currTime (Just (loadedCount, ordMessages)) evals [test_message | isJust test]

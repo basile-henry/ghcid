@@ -60,7 +60,8 @@ executable ghcid
         process >= 1.1,
         cmdargs >= 0.10,
         ansi-terminal,
-        terminal-size >= 0.3
+        terminal-size >= 0.3,
+        regex-tdfa >= 1.2
     if os(windows)
         build-depends: Win32
     else
@@ -95,7 +96,8 @@ test-suite ghcid_test
         terminal-size >= 0.3,
         cmdargs,
         tasty,
-        tasty-hunit
+        tasty-hunit,
+        regex-tdfa >= 1.2
     if os(windows)
         build-depends: Win32
     else
